@@ -1,3 +1,4 @@
+
 let logInterval = null;
 let defaultFolder = '';
 
@@ -40,7 +41,7 @@ async function fetchLogs() {
 }
 
 function showRenamePrompt() {
-  const newName = prompt(`✅ Dump completed!\n\nRename folder before saving to /sdcard/Download?`, defaultFolder);
+  const newName = prompt(`✅ Dump completed!\n\nRename folder before saving?`, defaultFolder);
   const rename = newName || defaultFolder;
 
   fetch('/rename_and_move', {
@@ -49,7 +50,7 @@ function showRenamePrompt() {
     body: JSON.stringify({ old: defaultFolder, new: rename })
   }).then(res => res.json()).then(data => {
     if (data.status === 'success') {
-      document.getElementById('logs').innerHTML += `<br><br>✅ Saved to /sdcard/Download/${rename}<br><a href="${data.url}">Open index.html</a>`;
+      document.getElementById('logs').innerHTML += `<br><br>✅ Saved to server downloads/${rename}<br><a href="${data.url}" target="_blank">Open index.html</a>`;
     } else {
       document.getElementById('logs').innerHTML += `<br>❌ Error saving: ${data.message}`;
     }
