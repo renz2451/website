@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 import os, subprocess, shutil, threading, tempfile
 
 app = Flask(__name__)
-BASE_DIR = '/storage/emulated/0/Download/'
+BASE_DIR = '/storage/emulated/0/Download/webdumps'
 os.makedirs(BASE_DIR, exist_ok=True)
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -97,4 +97,4 @@ def download_zip(filename):
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5051))
     app.run(host='0.0.0.0', port=port)
-    
+        
