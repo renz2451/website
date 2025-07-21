@@ -1,6 +1,5 @@
-
 let logInterval = null;
-let defaultFolder = '';
+let tempPath = '';
 
 document.getElementById('dumpForm').onsubmit = async function(e) {
   e.preventDefault();
@@ -18,10 +17,10 @@ document.getElementById('dumpForm').onsubmit = async function(e) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  const result = await res.json();
 
+  const result = await res.json();
   if (result.status === 'started') {
-    defaultFolder = result.default_name;
+    tempPath = result.temp_path;
     logInterval = setInterval(fetchLogs, 1000);
   } else {
     document.getElementById('logs').innerText = '❌ Error: ' + result.message;
@@ -34,25 +33,27 @@ async function fetchLogs() {
   const logDiv = document.getElementById('logs');
   logDiv.innerHTML = data.logs.join('<br>');
 
-  if (data.logs.some(l => l.includes('FINISHED')) || data.logs.length > 0 && data.logs[data.logs.length - 1].includes('100%')) {
+  if (data.logs.some(l => l.includes('FINISHED')) || data.logs.some(l => l.includes('100%'))) {
     clearInterval(logInterval);
-    showRenamePrompt();
+    promptRenameAndDownload();
   }
 }
 
-function showRenamePrompt() {
-  const newName = prompt(`✅ Dump completed!\n\nRename folder before saving?`, defaultFolder);
-  const rename = newName || defaultFolder;
+function promptRenameAndDownload() {
+  const rename = prompt("✅ Dump completed! Enter filename for download:", "my_dump");
+  if (!rename) return;
 
-  fetch('/rename_and_move', {
+  fetch('/rename_and_download', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ old: defaultFolder, new: rename })
-  }).then(res => res.json()).then(data => {
-    if (data.status === 'success') {
-      document.getElementById('logs').innerHTML += `<br><br>✅ Saved to server downloads/${rename}<br><a href="${data.url}" target="_blank">Open index.html</a>`;
-    } else {
-      document.getElementById('logs').innerHTML += `<br>❌ Error saving: ${data.message}`;
-    }
-  });
+    body: JSON.stringify({ temp_path: tempPath, new_name: rename })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'success') {
+        document.getElementById('logs').innerHTML += `<br><br>✅ Download ready: <a href="${data.url}" target="_blank">Download ZIP</a>`;
+      } else {
+        document.getElementById('logs').innerHTML += `<br>❌ ${data.message}`;
+      }
+    });
 }
