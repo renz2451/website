@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import os, subprocess, shutil, threading
 
@@ -85,6 +84,8 @@ def rename_and_move():
     new_path = os.path.join(BASE_DIR, new)
 
     try:
+        if os.path.exists(new_path):
+            shutil.rmtree(new_path)
         shutil.move(old_path, new_path)
         return jsonify({
             'status': 'success',
