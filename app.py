@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 import os, subprocess, shutil, threading, tempfile
 
 app = Flask(__name__)
-BASE_DIR = '/storage/emulated/0/Download/webdumps'
+BASE_DIR = '/storage/emulated/0/Download/'
 os.makedirs(BASE_DIR, exist_ok=True)
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
