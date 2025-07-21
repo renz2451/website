@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify
-import os, subprocess, time, shutil, threading
+
+from flask import Flask, render_template, request, jsonify, send_from_directory
+import os, subprocess, shutil, threading
 
 app = Flask(__name__)
 BASE_DIR = os.path.join(os.getcwd(), 'downloads')
@@ -57,22 +58,22 @@ def get_logs():
 
     parsed_logs = []
     for line in lines[-30:]:
-        if "Saving to:" in line or ".html" in line or ".css" in line or ".js" in line or ".jpg" in line or ".png" in line or ".mp4" in line:
+        if "Saving to:" in line or any(ext in line for ext in ['.html', '.css', '.js', '.jpg', '.png', '.jpeg', '.gif', '.mp4']):
             if ".html" in line:
-                prefix = "📄 HTML"
+                prefix = "ðŸ“„ HTML"
             elif ".css" in line:
-                prefix = "🎨 CSS"
+                prefix = "ðŸŽ¨ CSS"
             elif ".js" in line:
-                prefix = "📜 JS"
+                prefix = "ðŸ“œ JS"
             elif any(ext in line for ext in ['.jpg', '.png', '.jpeg', '.gif']):
-                prefix = "🖼️ Image"
+                prefix = "ðŸ–¼ï¸ Image"
             elif ".mp4" in line:
-                prefix = "🎥 Video"
+                prefix = "ðŸŽ¥ Video"
             else:
-                prefix = "🧩 File"
+                prefix = "ðŸ§© File"
             parsed_logs.append(f"{prefix}: {line.strip()}")
         else:
-            parsed_logs.append(f"🔄 {line.strip()}")
+            parsed_logs.append(f"ðŸ”„ {line.strip()}")
     return jsonify({'logs': parsed_logs})
 
 @app.route('/rename_and_move', methods=['POST'])
@@ -81,16 +82,22 @@ def rename_and_move():
     old = data['old']
     new = data['new']
     old_path = os.path.join(BASE_DIR, old)
-    new_path = os.path.join("/sdcard/Download", new)
+    new_path = os.path.join(BASE_DIR, new)
 
     try:
         shutil.move(old_path, new_path)
         return jsonify({
             'status': 'success',
-            'url': f"file://{new_path}/{new}/index.html"
+            'url': f"/downloads/{new}/index.html"
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
+@app.route('/downloads/<path:filename>')
+def download_file(filename):
+    return send_from_directory(BASE_DIR, filename)
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5051)
+    import os
+    port = int(os.environ.get("PORT", 5051))
+    app.run(host='0.0.0.0', port=port)
