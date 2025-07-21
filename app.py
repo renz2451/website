@@ -60,20 +60,20 @@ def get_logs():
     for line in lines[-30:]:
         if "Saving to:" in line or any(ext in line for ext in ['.html', '.css', '.js', '.jpg', '.png', '.jpeg', '.gif', '.mp4']):
             if ".html" in line:
-                prefix = "ðŸ“„ HTML"
+                prefix = "📄 HTML"
             elif ".css" in line:
-                prefix = "ðŸŽ¨ CSS"
+                prefix = "🎨 CSS"
             elif ".js" in line:
-                prefix = "ðŸ“œ JS"
+                prefix = "📜 JS"
             elif any(ext in line for ext in ['.jpg', '.png', '.jpeg', '.gif']):
-                prefix = "ðŸ–¼ï¸ Image"
+                prefix = "🖼️ Image"
             elif ".mp4" in line:
-                prefix = "ðŸŽ¥ Video"
+                prefix = "🎥 Video"
             else:
-                prefix = "ðŸ§© File"
+                prefix = "🧩 File"
             parsed_logs.append(f"{prefix}: {line.strip()}")
         else:
-            parsed_logs.append(f"ðŸ”„ {line.strip()}")
+            parsed_logs.append(f"🔄 {line.strip()}")
     return jsonify({'logs': parsed_logs})
 
 @app.route('/rename_and_move', methods=['POST'])
