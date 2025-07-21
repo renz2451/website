@@ -1,10 +1,13 @@
 from flask import Flask, render_template, request, jsonify, send_file
-import os, subprocess, shutil, threading, tempfile
+import os, subprocess, threading, shutil, zipfile, uuid
 
 app = Flask(__name__)
-BASE_DIR = '/storage/emulated/0/Download/webdumps'
-os.makedirs(BASE_DIR, exist_ok=True)
+TEMP_DIR = os.path.join(os.getcwd(), 'temp')
+OUTPUT_DIR = os.path.join(os.getcwd(), 'downloads')
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
+
+os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 def run_wget(command):
@@ -30,13 +33,14 @@ def dump():
     if not url.startswith(('http://', 'https://')):
         return jsonify({'status': 'error', 'message': 'Invalid URL'})
 
-    domain = url.replace("http://", "").replace("https://", "").split('/')[0]
-    temp_dir = tempfile.mkdtemp()
-    
+    unique_id = str(uuid.uuid4())[:8]
+    temp_folder = os.path.join(TEMP_DIR, unique_id)
+    os.makedirs(temp_folder, exist_ok=True)
+
     cmd = [
         "wget", "--mirror", "--convert-links", "--adjust-extension",
         "--page-requisites", "--no-parent", "--verbose",
-        f"--wait={wait}", f"--directory-prefix={temp_dir}"
+        f"--wait={wait}", f"--directory-prefix={temp_folder}"
     ]
     if depth != "0":
         cmd += ["-l", depth]
@@ -45,7 +49,7 @@ def dump():
     cmd.append(url)
 
     threading.Thread(target=run_wget, args=(cmd,), daemon=True).start()
-    return jsonify({'status': 'started', 'default_name': domain, 'temp_path': temp_dir})
+    return jsonify({'status': 'started', 'temp_path': unique_id})
 
 @app.route('/logs')
 def get_logs():
@@ -56,45 +60,32 @@ def get_logs():
 
     parsed_logs = []
     for line in lines[-30:]:
-        if "Saving to:" in line or any(ext in line for ext in ['.html', '.css', '.js', '.jpg', '.png', '.jpeg', '.gif', '.mp4']):
-            if ".html" in line:
-                prefix = "📄 HTML"
-            elif ".css" in line:
-                prefix = "🎨 CSS"
-            elif ".js" in line:
-                prefix = "📜 JS"
-            elif any(ext in line for ext in ['.jpg', '.png', '.jpeg', '.gif']):
-                prefix = "🖼️ Image"
-            elif ".mp4" in line:
-                prefix = "🎥 Video"
-            else:
-                prefix = "🧩 File"
-            parsed_logs.append(f"{prefix}: {line.strip()}")
-        else:
-            parsed_logs.append(f"🔄 {line.strip()}")
+        parsed_logs.append(f"🔄 {line.strip()}")
     return jsonify({'logs': parsed_logs})
 
 @app.route('/rename_and_download', methods=['POST'])
 def rename_and_download():
     data = request.json
-    new = data['new']
-    temp_path = data['temp_path']
-    new_path = os.path.join(BASE_DIR, new)
+    temp_id = data['temp_path']
+    new_name = data['new_name']
+
+    temp_folder = os.path.join(TEMP_DIR, temp_id)
+    final_path = os.path.join(OUTPUT_DIR, new_name)
+    zip_path = final_path + ".zip"
 
     try:
-        shutil.move(temp_path, new_path)
-        zip_name = new_path + ".zip"
-        shutil.make_archive(new_path, 'zip', new_path)
-        return jsonify({'status': 'success', 'url': f"/download_zip/{new}.zip"})
+        shutil.move(temp_folder, final_path)
+        shutil.make_archive(final_path, 'zip', final_path)
+        return jsonify({
+            'status': 'success',
+            'url': f"/download_zip/{new_name}.zip"
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-@app.route('/download_zip/<path:filename>')
+@app.route('/download_zip/<filename>')
 def download_zip(filename):
-    file_path = os.path.join(BASE_DIR, filename)
-    return send_file(file_path, as_attachment=True)
+    return send_file(os.path.join(OUTPUT_DIR, filename), as_attachment=True)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5051))
-    app.run(host='0.0.0.0', port=port)
-        
+    app.run(debug=True)
