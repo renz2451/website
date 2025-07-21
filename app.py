@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_from_directory
 import os, subprocess, shutil, threading
 
 app = Flask(__name__)
-BASE_DIR = os.path.join(os.getcwd(), 'downloads')
+BASE_DIR = '/storage/emulated/0/Download/'  # Save dumps to public Android Downloads folder
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
 os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -69,7 +69,7 @@ def get_logs():
             elif ".mp4" in line:
                 prefix = "🎥 Video"
             else:
-                prefix = "🧩 File"
+                prefix = "🧹 File"
             parsed_logs.append(f"{prefix}: {line.strip()}")
         else:
             parsed_logs.append(f"🔄 {line.strip()}")
@@ -84,14 +84,13 @@ def rename_and_move():
     new_path = os.path.join(BASE_DIR, new)
 
     try:
-        if os.path.exists(new_path):
-            shutil.rmtree(new_path)
         shutil.move(old_path, new_path)
         return jsonify({
             'status': 'success',
             'url': f"/downloads/{new}/index.html"
         })
     except Exception as e:
+        print("Rename error:", e)
         return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/downloads/<path:filename>')
@@ -99,6 +98,5 @@ def download_file(filename):
     return send_from_directory(BASE_DIR, filename)
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5051))
     app.run(host='0.0.0.0', port=port)
