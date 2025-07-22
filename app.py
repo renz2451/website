@@ -1,12 +1,12 @@
-
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 import os, subprocess, shutil, threading, time
 
 app = Flask(__name__)
-BASE_DIR = os.path.join(os.getcwd(), 'downloads')
-LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
+
+# ✅ Android-friendly storage location (e.g. Termux or Pydroid)
+BASE_DIR = '/storage/emulated/0/WebsiteDumps'
+LOG_FILE = os.path.join(BASE_DIR, 'latest.log')
 os.makedirs(BASE_DIR, exist_ok=True)
-os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 def run_wget(command):
     with open(LOG_FILE, "w") as log_file:
@@ -84,18 +84,18 @@ def rename_and_move():
     old_path = os.path.join(BASE_DIR, old)
     new_path = os.path.join(BASE_DIR, new)
 
-    # Wait up to 20 seconds for dump to exist
+    # ⏳ Wait for dump to appear (up to 20s)
     for i in range(20):
         if os.path.exists(old_path):
             break
         time.sleep(1)
     else:
-        return jsonify({'status': 'error', 'message': f'Dump folder "{old}" not found after waiting.'})
+        return jsonify({'status': 'error', 'message': f'Dump folder \"{old}\" not found after waiting.'})
 
     try:
         if os.path.exists(new_path):
-            return jsonify({'status': 'error', 'message': f'Target folder "{new}" already exists.'})
+            return jsonify({'status': 'error', 'message': f'Target folder \"{new}\" already exists.'})
         shutil.move(old_path, new_path)
-        return jsonify({'status': 'success', 'url': f'/downloads/{new}'})
+        return jsonify({'status': 'success', 'url': f'/sdcard/WebsiteDumps/{new}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
