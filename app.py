@@ -2,9 +2,13 @@ from flask import Flask, render_template, request, jsonify, send_from_directory
 import os, subprocess, shutil, threading
 
 app = Flask(__name__)
-BASE_DIR = '/storage/emulated/0/Download/'  # Changed to Android downloads directory
+# Base directory where files will be saved on the server
+SERVER_DOWNLOAD_DIR = os.path.join(os.getcwd(), 'downloads')
+# Directory you want to appear as "/storage/emulated/0/Download/" in the web interface
+WEB_DOWNLOAD_DIR = '/storage/emulated/0/Download/'
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
-os.makedirs(BASE_DIR, exist_ok=True)
+
+os.makedirs(SERVER_DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 def run_wget(command):
@@ -31,7 +35,7 @@ def dump():
         return jsonify({'status': 'error', 'message': 'Invalid URL'})
 
     domain = url.replace("http://", "").replace("https://", "").split('/')[0]
-    dump_path = os.path.join(BASE_DIR, domain)
+    dump_path = os.path.join(SERVER_DOWNLOAD_DIR, domain)
     os.makedirs(dump_path, exist_ok=True)
 
     cmd = [
@@ -80,21 +84,22 @@ def rename_and_move():
     data = request.json
     old = data['old']
     new = data['new']
-    old_path = os.path.join(BASE_DIR, old)
-    new_path = os.path.join(BASE_DIR, new)
+    old_path = os.path.join(SERVER_DOWNLOAD_DIR, old)
+    new_path = os.path.join(SERVER_DOWNLOAD_DIR, new)
 
     try:
         shutil.move(old_path, new_path)
         return jsonify({
             'status': 'success',
-            'url': f"/downloads/{new}/index.html"
+            'url': f"{WEB_DOWNLOAD_DIR}{new}/index.html"
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-@app.route('/downloads/<path:filename>')
+# Serve files from the actual download directory but make them appear to be in the Android path
+@app.route('/storage/emulated/0/Download/<path:filename>')
 def download_file(filename):
-    return send_from_directory(BASE_DIR, filename)
+    return send_from_directory(SERVER_DOWNLOAD_DIR, filename)
 
 if __name__ == '__main__':
     import os
