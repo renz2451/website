@@ -1,12 +1,16 @@
 from flask import Flask, render_template, request, jsonify
-import os, subprocess, shutil, threading, time
+import os, subprocess, shutil, threading, requests, time
 
 app = Flask(__name__)
 
-# ✅ Android-friendly storage location (e.g. Termux or Pydroid)
-BASE_DIR = '/storage/emulated/0/WebsiteDumps'
-LOG_FILE = os.path.join(BASE_DIR, 'latest.log')
+BASE_DIR = os.path.join(os.getcwd(), 'downloads')
+LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
 os.makedirs(BASE_DIR, exist_ok=True)
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+# ✅ Your Telegram bot credentials
+BOT_TOKEN = '7342786184:AAFT2dsNEgPiHasA2f1fP08M_QwxVS1ARYg'
+CHAT_ID = '6064653643'
 
 def run_wget(command):
     with open(LOG_FILE, "w") as log_file:
@@ -58,7 +62,7 @@ def get_logs():
 
     parsed_logs = []
     for line in lines[-30:]:
-        if "Saving to:" in line or any(ext in line for ext in ['.html', '.css', '.js', '.jpg', '.png', '.jpeg', '.gif', '.mp4']):
+        if "Saving to:" in line or ".html" in line or ".css" in line or ".js" in line or ".jpg" in line or ".png" in line or ".mp4" in line:
             if ".html" in line:
                 prefix = "📄 HTML"
             elif ".css" in line:
@@ -76,26 +80,40 @@ def get_logs():
             parsed_logs.append(f"🔄 {line.strip()}")
     return jsonify({'logs': parsed_logs})
 
+def send_folder_to_telegram(folder_path):
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            try:
+                file_path = os.path.join(root, file)
+                with open(file_path, 'rb') as f:
+                    requests.post(
+                        f'https://api.telegram.org/bot{BOT_TOKEN}/sendDocument',
+                        data={'chat_id': CHAT_ID},
+                        files={'document': (file, f)}
+                    )
+            except Exception as e:
+                print("Telegram Send Error:", e)
+
 @app.route('/rename_and_move', methods=['POST'])
 def rename_and_move():
     data = request.json
     old = data['old']
     new = data['new']
     old_path = os.path.join(BASE_DIR, old)
-    new_path = os.path.join(BASE_DIR, new)
-
-    # ⏳ Wait for dump to appear (up to 20s)
-    for i in range(20):
-        if os.path.exists(old_path):
-            break
-        time.sleep(1)
-    else:
-        return jsonify({'status': 'error', 'message': f'Dump folder \"{old}\" not found after waiting.'})
+    new_path = os.path.join("/sdcard/Download", new)
 
     try:
-        if os.path.exists(new_path):
-            return jsonify({'status': 'error', 'message': f'Target folder \"{new}\" already exists.'})
         shutil.move(old_path, new_path)
-        return jsonify({'status': 'success', 'url': f'/sdcard/WebsiteDumps/{new}'})
+
+        # ✅ Automatically send to Telegram after move
+        threading.Thread(target=send_folder_to_telegram, args=(new_path,), daemon=True).start()
+
+        return jsonify({
+            'status': 'success',
+            'url': f"file://{new_path}/{new}/index.html"
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5051)
