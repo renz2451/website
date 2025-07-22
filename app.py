@@ -1,19 +1,12 @@
-from flask import Flask, render_template, request, jsonify
-import os
-import subprocess
-import shutil
-import threading
-import uuid
+
+from flask import Flask, render_template, request, jsonify, send_from_directory
+import os, subprocess, shutil, threading
 
 app = Flask(__name__)
-
-# Android public Download folder
-ANDROID_DOWNLOAD_PATH = "/storage/emulated/0/Download"
+BASE_DIR = os.path.join(os.getcwd(), 'downloads')
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
-TEMP_DIR = os.path.join(os.getcwd(), 'temp')
-
+os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-os.makedirs(TEMP_DIR, exist_ok=True)
 
 def run_wget(command):
     with open(LOG_FILE, "w") as log_file:
@@ -39,9 +32,7 @@ def dump():
         return jsonify({'status': 'error', 'message': 'Invalid URL'})
 
     domain = url.replace("http://", "").replace("https://", "").split('/')[0]
-    unique_id = str(uuid.uuid4())[:6]
-    folder_name = f"{domain}_{unique_id}"
-    dump_path = os.path.join(TEMP_DIR, folder_name)
+    dump_path = os.path.join(BASE_DIR, domain)
     os.makedirs(dump_path, exist_ok=True)
 
     cmd = [
@@ -56,20 +47,31 @@ def dump():
     cmd.append(url)
 
     threading.Thread(target=run_wget, args=(cmd,), daemon=True).start()
-    return jsonify({'status': 'started', 'default_name': folder_name})
+    return jsonify({'status': 'started', 'default_name': domain})
 
 @app.route('/logs')
 def get_logs():
     if not os.path.exists(LOG_FILE):
         return jsonify({'logs': []})
-
     with open(LOG_FILE, 'r') as file:
         lines = file.readlines()
 
     parsed_logs = []
     for line in lines[-30:]:
-        if "Saving to:" in line:
-            parsed_logs.append(f"💾 {line.strip()}")
+        if "Saving to:" in line or any(ext in line for ext in ['.html', '.css', '.js', '.jpg', '.png', '.jpeg', '.gif', '.mp4']):
+            if ".html" in line:
+                prefix = "📄 HTML"
+            elif ".css" in line:
+                prefix = "🎨 CSS"
+            elif ".js" in line:
+                prefix = "📜 JS"
+            elif any(ext in line for ext in ['.jpg', '.png', '.jpeg', '.gif']):
+                prefix = "🖼️ Image"
+            elif ".mp4" in line:
+                prefix = "🎥 Video"
+            else:
+                prefix = "🧩 File"
+            parsed_logs.append(f"{prefix}: {line.strip()}")
         else:
             parsed_logs.append(f"🔄 {line.strip()}")
     return jsonify({'logs': parsed_logs})
@@ -79,22 +81,23 @@ def rename_and_move():
     data = request.json
     old = data['old']
     new = data['new']
-
-    old_path = os.path.join(TEMP_DIR, old)
-    new_path = os.path.join(ANDROID_DOWNLOAD_PATH, new)
+    old_path = os.path.join(BASE_DIR, old)
+    new_path = os.path.join(BASE_DIR, new)
 
     try:
-        if os.path.exists(new_path):
-            shutil.rmtree(new_path)
         shutil.move(old_path, new_path)
         return jsonify({
             'status': 'success',
-            'message': f'Saved to {new_path}',
-            'url': f"file://{new_path}/index.html"
+            'url': f"/downloads/{new}/index.html"
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
+@app.route('/downloads/<path:filename>')
+def download_file(filename):
+    return send_from_directory(BASE_DIR, filename)
+
 if __name__ == '__main__':
+    import os
     port = int(os.environ.get("PORT", 5051))
     app.run(host='0.0.0.0', port=port)
