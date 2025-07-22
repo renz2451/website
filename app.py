@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify
-import os, subprocess, time, shutil, threading
+
+from flask import Flask, render_template, request, jsonify, send_from_directory
+import os, subprocess, shutil, threading, time
 
 app = Flask(__name__)
 BASE_DIR = os.path.join(os.getcwd(), 'downloads')
@@ -57,7 +58,7 @@ def get_logs():
 
     parsed_logs = []
     for line in lines[-30:]:
-        if "Saving to:" in line or ".html" in line or ".css" in line or ".js" in line or ".jpg" in line or ".png" in line or ".mp4" in line:
+        if "Saving to:" in line or any(ext in line for ext in ['.html', '.css', '.js', '.jpg', '.png', '.jpeg', '.gif', '.mp4']):
             if ".html" in line:
                 prefix = "📄 HTML"
             elif ".css" in line:
@@ -81,16 +82,20 @@ def rename_and_move():
     old = data['old']
     new = data['new']
     old_path = os.path.join(BASE_DIR, old)
-    new_path = os.path.join("/sdcard/Download", new)
+    new_path = os.path.join(BASE_DIR, new)
+
+    # Wait up to 20 seconds for dump to exist
+    for i in range(20):
+        if os.path.exists(old_path):
+            break
+        time.sleep(1)
+    else:
+        return jsonify({'status': 'error', 'message': f'Dump folder "{old}" not found after waiting.'})
 
     try:
+        if os.path.exists(new_path):
+            return jsonify({'status': 'error', 'message': f'Target folder "{new}" already exists.'})
         shutil.move(old_path, new_path)
-        return jsonify({
-            'status': 'success',
-            'url': f"file://{new_path}/{new}/index.html"
-        })
+        return jsonify({'status': 'success', 'url': f'/downloads/{new}'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5051)
