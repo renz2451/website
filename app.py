@@ -1,42 +1,49 @@
-
 from flask import Flask, render_template, request, jsonify
 import os, subprocess, time, shutil, threading, zipfile, requests
 
 app = Flask(__name__)
 BASE_DIR = os.path.join(os.getcwd(), 'downloads')
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
+DEBUG_LOG = os.path.join(os.getcwd(), 'logs', 'debug.log')
 os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-# Telegram credentials
-TELEGRAM_TOKEN = "7342786184:AAFT2dsNEgPiHasA2f1fP08M_QwxVS1ARYg"
-CHAT_ID = "6064653643"
+BOT_TOKEN = '7342786184:AAFT2dsNEgPiHasA2f1fP08M_QwxVS1ARYg'
+CHAT_ID = '6064653643'
 
-def run_wget_and_send(cmd, domain):
+def log_debug(message):
+    with open(DEBUG_LOG, 'a') as f:
+        timestamp = time.strftime("[%Y-%m-%d %H:%M:%S]")
+        f.write(f"{timestamp} {message}\n")
+    print(f"[DEBUG] {message}")
+
+def send_to_telegram(file_path, caption):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+    with open(file_path, 'rb') as f:
+        files = {'document': (os.path.basename(file_path), f)}
+        data = {'chat_id': CHAT_ID, 'caption': caption}
+        response = requests.post(url, files=files, data=data)
+    return response.ok
+
+def run_wget(command):
+    log_debug("Starting wget command...")
     with open(LOG_FILE, "w") as log_file:
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         for line in process.stdout:
             log_file.write(line)
             log_file.flush()
         process.wait()
+    log_debug("wget command completed.")
 
-    # Create zip of the downloaded folder
-    dump_path = os.path.join(BASE_DIR, domain)
-    zip_path = dump_path + ".zip"
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(dump_path):
+def zip_folder(folder_path, output_path):
+    log_debug(f"Zipping folder: {folder_path}")
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(folder_path):
             for file in files:
-                abs_path = os.path.join(root, file)
-                rel_path = os.path.relpath(abs_path, dump_path)
-                zipf.write(abs_path, rel_path)
-
-    # Send zip to Telegram
-    with open(zip_path, 'rb') as f:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument",
-            data={"chat_id": CHAT_ID},
-            files={"document": f}
-        )
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, folder_path)
+                zipf.write(full_path, rel_path)
+    log_debug(f"Created ZIP: {output_path}")
 
 @app.route('/')
 def index():
@@ -68,8 +75,23 @@ def dump():
         cmd += ["--limit-rate", rate]
     cmd.append(url)
 
-    threading.Thread(target=run_wget_and_send, args=(cmd, domain), daemon=True).start()
-    return jsonify({'status': 'started', 'default_name': domain})
+    def task():
+        try:
+            run_wget(cmd)
+            zip_path = f"{dump_path}.zip"
+            zip_folder(dump_path, zip_path)
+            success = send_to_telegram(zip_path, f"📦 Dumped site: {domain}")
+            if success:
+                log_debug("✅ ZIP sent to Telegram successfully.")
+                os.remove(zip_path)
+                log_debug("🧹 Removed local ZIP.")
+            else:
+                log_debug("❌ Failed to send to Telegram.")
+        except Exception as e:
+            log_debug(f"⚠️ Error during process: {str(e)}")
+
+    threading.Thread(target=task, daemon=True).start()
+    return jsonify({'status': 'started', 'message': f"Dumping {domain} and sending to Telegram..."})
 
 @app.route('/logs')
 def get_logs():
@@ -80,23 +102,15 @@ def get_logs():
 
     parsed_logs = []
     for line in lines[-30:]:
-        if "Saving to:" in line or ".html" in line or ".css" in line or ".js" in line or ".jpg" in line or ".png" in line or ".mp4" in line:
-            if ".html" in line:
-                prefix = "📄 HTML"
-            elif ".css" in line:
-                prefix = "🎨 CSS"
-            elif ".js" in line:
-                prefix = "📜 JS"
-            elif any(ext in line for ext in ['.jpg', '.png', '.jpeg', '.gif']):
-                prefix = "🖼️ Image"
-            elif ".mp4" in line:
-                prefix = "🎥 Video"
-            else:
-                prefix = "🧩 File"
-            parsed_logs.append(f"{prefix}: {line.strip()}")
-        else:
-            parsed_logs.append(f"🔄 {line.strip()}")
+        parsed_logs.append(line.strip())
     return jsonify({'logs': parsed_logs})
+
+@app.route('/debug')
+def get_debug():
+    if not os.path.exists(DEBUG_LOG):
+        return jsonify({'debug': []})
+    with open(DEBUG_LOG, 'r') as f:
+        return jsonify({'debug': f.readlines()[-30:]})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5051)
