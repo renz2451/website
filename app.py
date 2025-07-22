@@ -1,16 +1,26 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
-import os, subprocess, shutil, threading, zipfile
+from flask import Flask, render_template, request, jsonify
+import os, subprocess, threading
 from io import BytesIO
+import zipfile
 
 app = Flask(__name__)
-BASE_DIR = os.path.join(os.getcwd(), 'downloads')
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
-os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-def run_wget(command):
+def run_wget(url, depth, rate, wait):
     with open(LOG_FILE, "w") as log_file:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        cmd = [
+            "wget", "--mirror", "--convert-links", "--adjust-extension",
+            "--page-requisites", "--no-parent", "--verbose",
+            f"--wait={wait}"
+        ]
+        if depth != "0":
+            cmd += ["-l", depth]
+        if rate != "unlimited":
+            cmd += ["--limit-rate", rate]
+        cmd.append(url)
+
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         for line in process.stdout:
             log_file.write(line)
             log_file.flush()
@@ -31,23 +41,57 @@ def dump():
     if not url.startswith(('http://', 'https://')):
         return jsonify({'status': 'error', 'message': 'Invalid URL'})
 
-    domain = url.replace("http://", "").replace("https://", "").split('/')[0]
-    dump_path = os.path.join(BASE_DIR, domain)
-    os.makedirs(dump_path, exist_ok=True)
+    # Run wget in a temporary directory
+    temp_dir = os.path.join(os.getcwd(), 'temp_download')
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Store the original working directory
+    original_dir = os.getcwd()
+    
+    try:
+        # Change to temp directory
+        os.chdir(temp_dir)
+        
+        # Start the download process
+        threading.Thread(target=run_wget, args=(url, depth, rate, wait), daemon=True).start()
+        
+        domain = url.replace("http://", "").replace("https://", "").split('/')[0]
+        return jsonify({'status': 'started', 'domain': domain})
+    finally:
+        # Change back to original directory
+        os.chdir(original_dir)
 
-    cmd = [
-        "wget", "--mirror", "--convert-links", "--adjust-extension",
-        "--page-requisites", "--no-parent", "--verbose",
-        f"--wait={wait}", f"--directory-prefix={dump_path}"
-    ]
-    if depth != "0":
-        cmd += ["-l", depth]
-    if rate != "unlimited":
-        cmd += ["--limit-rate", rate]
-    cmd.append(url)
-
-    threading.Thread(target=run_wget, args=(cmd,), daemon=True).start()
-    return jsonify({'status': 'started', 'default_name': domain})
+@app.route('/download', methods=['GET'])
+def download():
+    domain = request.args.get('domain')
+    if not domain:
+        return jsonify({'status': 'error', 'message': 'Domain not specified'})
+    
+    temp_dir = os.path.join(os.getcwd(), 'temp_download')
+    domain_path = os.path.join(temp_dir, domain)
+    
+    if not os.path.exists(domain_path):
+        return jsonify({'status': 'error', 'message': 'Download not ready or failed'})
+    
+    # Create zip in memory
+    memory_file = BytesIO()
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(domain_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, domain_path)
+                zipf.write(file_path, arcname)
+    memory_file.seek(0)
+    
+    # Clean up
+    shutil.rmtree(domain_path)
+    
+    return send_file(
+        memory_file,
+        as_attachment=True,
+        download_name=f'{domain}.zip',
+        mimetype='application/zip'
+    )
 
 @app.route('/logs')
 def get_logs():
@@ -75,28 +119,6 @@ def get_logs():
         else:
             parsed_logs.append(f"🔄 {line.strip()}")
     return jsonify({'logs': parsed_logs})
-
-@app.route('/download_zip/<domain>')
-def download_zip(domain):
-    domain_path = os.path.join(BASE_DIR, domain)
-    if not os.path.exists(domain_path):
-        return jsonify({'status': 'error', 'message': 'Domain not found'})
-    
-    memory_file = BytesIO()
-    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(domain_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, domain_path)
-                zipf.write(file_path, arcname)
-    memory_file.seek(0)
-    
-    return send_file(
-        memory_file,
-        as_attachment=True,
-        download_name=f'{domain}.zip',
-        mimetype='application/zip'
-    )
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5051))
