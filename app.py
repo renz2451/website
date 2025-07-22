@@ -1,9 +1,8 @@
-
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import os, subprocess, shutil, threading
 
 app = Flask(__name__)
-BASE_DIR = os.path.join(os.getcwd(), 'downloads')
+BASE_DIR = '/storage/emulated/0/Download/'  # Changed to Android downloads directory
 LOG_FILE = os.path.join(os.getcwd(), 'logs', 'latest.log')
 os.makedirs(BASE_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
